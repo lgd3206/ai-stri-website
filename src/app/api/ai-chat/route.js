@@ -1,8 +1,6 @@
 // app/api/ai-chat/route.js - 增强版模拟模式（修复版）
 import { NextResponse } from 'next/server';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const MOCK_MODE = true; // 增强演示模式
 
 // 安全生产知识库
 const safetyKnowledge = [
@@ -213,7 +211,7 @@ export async function POST(request) {
 
     console.log('收到问题:', question);
 
-    if (MOCK_MODE) {
+   if (true) {
       // 增强演示模式
       const matches = findBestMatch(question);
       console.log(`找到 ${matches.length} 个匹配项:`, matches.map(m => m.matchInfo));
