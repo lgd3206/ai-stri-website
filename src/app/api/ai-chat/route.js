@@ -118,23 +118,54 @@ const safetyKnowledge = [
 ];
 
 // 智能匹配算法
+// 优化后的AI匹配和回答逻辑
+// 替换 app/api/ai-chat/route.js 中的相关函数
+
+// 增强的智能匹配算法
 function findBestMatch(question) {
   let bestMatches = [];
+  const questionLower = question.toLowerCase();
+  
+  // 移除标点符号，分词处理
+  const questionWords = questionLower.replace(/[？？。！，、；：""''（）【】]/g, '').split('');
   
   for (const knowledge of safetyKnowledge) {
     let score = 0;
-    const questionLower = question.toLowerCase();
     
-    // 关键词匹配
+    // 1. 关键词完全匹配 (最高分)
     for (const keyword of knowledge.keywords) {
       if (questionLower.includes(keyword)) {
-        score += 10;
+        score += 15;
       }
     }
     
-    // 分类匹配
+    // 2. 分类匹配
     if (questionLower.includes(knowledge.category)) {
-      score += 5;
+      score += 10;
+    }
+    
+    // 3. 模糊匹配 - 检查问题中的字符
+    for (const word of questionWords) {
+      if (word.length > 0) {
+        // 检查关键词中是否包含这个字
+        for (const keyword of knowledge.keywords) {
+          if (keyword.includes(word)) {
+            score += 1;
+          }
+        }
+        // 检查分类中是否包含这个字
+        if (knowledge.category.includes(word)) {
+          score += 2;
+        }
+      }
+    }
+    
+    // 4. 内容相关性检查
+    const contentLower = knowledge.content.toLowerCase();
+    for (const word of questionWords) {
+      if (word.length > 0 && contentLower.includes(word)) {
+        score += 0.5;
+      }
     }
     
     if (score > 0) {
@@ -146,29 +177,82 @@ function findBestMatch(question) {
     }
   }
   
+  // 按分数排序
   bestMatches.sort((a, b) => b.score - a.score);
-  return bestMatches.slice(0, 2);
+  return bestMatches.slice(0, 3);
 }
 
-// 生成回答
+// 智能回答生成 - 更宽容的匹配策略
 function generateAnswer(question, matches) {
-  if (matches.length === 0) {
+  const questionLower = question.toLowerCase();
+  
+  // 如果有匹配项，返回最佳匹配
+  if (matches.length > 0 && matches[0].score >= 3) {
+    const bestMatch = matches[0];
+    const knowledge = bestMatch.knowledge;
+    
+    let answer = `关于"${question}"的专业回答：\n\n`;
+    answer += knowledge.content;
+    answer += `\n\n📋 **相关要点提醒：**\n`;
+    answer += `• 所属领域：${knowledge.category}\n`;
+    answer += `• 匹配度：${bestMatch.score.toFixed(1)}分\n`;
+    
+    if (matches.length > 1) {
+      answer += `• 相关领域：${matches.slice(1, 2).map(m => m.knowledge.category).join('、')}\n`;
+    }
+    
+    answer += `\n💡 **实施建议：**\n`;
+    answer += `• 结合企业实际情况制定具体措施\n`;
+    answer += `• 定期检查和更新相关制度\n`;
+    answer += `• 加强培训，提高员工认知水平\n`;
+    answer += `\n（当前为增强演示模式，基于专业安全生产知识库）`;
+    
     return {
-      answer: `抱歉，我暂时无法找到关于"${question}"的相关信息。
-
-我目前的知识库涵盖以下6个安全生产领域：
-• 安全生产法律法规
-• 风险评估与管控  
-• 应急管理
-• 隐患排查治理
-• 安全教育培训
-• 重大危险源管理
-
-建议您重新描述问题，或者选择上述领域中的具体问题咨询。`,
-      relatedTopics: ["安全生产法", "风险评估", "应急管理"],
-      matchScore: 0
+      answer,
+      relatedTopics: [knowledge.category, ...(matches.length > 1 ? [matches[1].knowledge.category] : [])],
+      matchScore: bestMatch.score
     };
   }
+  
+  // 智能兜底回答 - 根据问题特征给出相关建议
+  let smartAnswer = `感谢您的提问："${question}"。\n\n`;
+  
+  // 检查问题类型，给出针对性建议
+  if (questionLower.includes('如何') || questionLower.includes('怎么') || questionLower.includes('怎样')) {
+    smartAnswer += `我理解您想了解具体的操作方法。基于安全生产最佳实践，我建议您：\n\n`;
+    smartAnswer += `**基本原则：**\n`;
+    smartAnswer += `• 遵循"安全第一、预防为主、综合治理"方针\n`;
+    smartAnswer += `• 建立健全安全生产责任制\n`;
+    smartAnswer += `• 定期开展安全检查和隐患排查\n`;
+    smartAnswer += `• 加强安全教育培训\n\n`;
+  } else if (questionLower.includes('是什么') || questionLower.includes('什么是')) {
+    smartAnswer += `这是一个很好的基础概念问题。在安全生产领域：\n\n`;
+    smartAnswer += `**核心要点：**\n`;
+    smartAnswer += `• 安全生产是保护人民生命财产安全的重要工作\n`;
+    smartAnswer += `• 需要遵循相关法律法规和标准规范\n`;
+    smartAnswer += `• 企业承担安全生产主体责任\n`;
+    smartAnswer += `• 持续改进和风险管控是关键\n\n`;
+  } else if (questionLower.includes('要求') || questionLower.includes('标准') || questionLower.includes('规定')) {
+    smartAnswer += `关于相关要求和标准，请参考：\n\n`;
+    smartAnswer += `**法规依据：**\n`;
+    smartAnswer += `• 《安全生产法》及相关法律法规\n`;
+    smartAnswer += `• 国家和行业安全标准\n`;
+    smartAnswer += `• 企业安全生产规章制度\n`;
+    smartAnswer += `• 应急管理部门相关规定\n\n`;
+  }
+  
+  smartAnswer += `**我目前的专业知识库涵盖：**\n`;
+  smartAnswer += `• 安全生产法律法规\n• 风险评估与管控\n• 应急管理\n• 隐患排查治理\n• 安全教育培训\n• 重大危险源管理\n\n`;
+  
+  smartAnswer += `💡 **建议：** 您可以尝试重新描述问题，或者询问上述具体领域的相关内容，我将为您提供更准确的专业指导。`;
+  smartAnswer += `\n\n（当前为增强演示模式，持续学习优化中）`;
+  
+  return {
+    answer: smartAnswer,
+    relatedTopics: ["安全生产法", "风险评估", "应急管理", "安全培训"],
+    matchScore: 1
+  };
+}
   
   const bestMatch = matches[0];
   const knowledge = bestMatch.knowledge;
