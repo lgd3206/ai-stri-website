@@ -1,6 +1,7 @@
 // app/api/ai-chat/route.js - 增强版模拟模式（修复版）
 import { NextResponse } from 'next/server';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MOCK_MODE = true; // 增强演示模式
 
 // 安全生产知识库
