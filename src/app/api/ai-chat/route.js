@@ -1,6 +1,5 @@
-// app/api/ai-chat/route.js - 增强版模拟模式（修复版）
+// src/app/api/ai-chat/route.js - 完整修复版
 import { NextResponse } from 'next/server';
-
 
 // 安全生产知识库
 const safetyKnowledge = [
@@ -118,53 +117,34 @@ const safetyKnowledge = [
 ];
 
 // 智能匹配算法
-// 优化后的AI匹配和回答逻辑
-// 替换 app/api/ai-chat/route.js 中的相关函数
-
-// 增强的智能匹配算法
 function findBestMatch(question) {
   let bestMatches = [];
   const questionLower = question.toLowerCase();
   
-  // 移除标点符号，分词处理
-  const questionWords = questionLower.replace(/[？？。！，、；：""''（）【】]/g, '').split('');
-  
   for (const knowledge of safetyKnowledge) {
     let score = 0;
     
-    // 1. 关键词完全匹配 (最高分)
+    // 关键词匹配
     for (const keyword of knowledge.keywords) {
       if (questionLower.includes(keyword)) {
-        score += 15;
+        score += 10;
       }
     }
     
-    // 2. 分类匹配
+    // 分类匹配
     if (questionLower.includes(knowledge.category)) {
-      score += 10;
+      score += 5;
     }
     
-    // 3. 模糊匹配 - 检查问题中的字符
-    for (const word of questionWords) {
-      if (word.length > 0) {
-        // 检查关键词中是否包含这个字
+    // 模糊匹配
+    const questionChars = questionLower.split('');
+    for (const char of questionChars) {
+      if (char.length > 0) {
         for (const keyword of knowledge.keywords) {
-          if (keyword.includes(word)) {
-            score += 1;
+          if (keyword.includes(char)) {
+            score += 0.5;
           }
         }
-        // 检查分类中是否包含这个字
-        if (knowledge.category.includes(word)) {
-          score += 2;
-        }
-      }
-    }
-    
-    // 4. 内容相关性检查
-    const contentLower = knowledge.content.toLowerCase();
-    for (const word of questionWords) {
-      if (word.length > 0 && contentLower.includes(word)) {
-        score += 0.5;
       }
     }
     
@@ -177,17 +157,16 @@ function findBestMatch(question) {
     }
   }
   
-  // 按分数排序
   bestMatches.sort((a, b) => b.score - a.score);
-  return bestMatches.slice(0, 3);
+  return bestMatches.slice(0, 2);
 }
 
-// 智能回答生成 - 更宽容的匹配策略
+// 生成回答
 function generateAnswer(question, matches) {
   const questionLower = question.toLowerCase();
   
   // 如果有匹配项，返回最佳匹配
-  if (matches.length > 0 && matches[0].score >= 3) {
+  if (matches.length > 0 && matches[0].score >= 2) {
     const bestMatch = matches[0];
     const knowledge = bestMatch.knowledge;
     
@@ -198,7 +177,7 @@ function generateAnswer(question, matches) {
     answer += `• 匹配度：${bestMatch.score.toFixed(1)}分\n`;
     
     if (matches.length > 1) {
-      answer += `• 相关领域：${matches.slice(1, 2).map(m => m.knowledge.category).join('、')}\n`;
+      answer += `• 相关领域：${matches[1].knowledge.category}\n`;
     }
     
     answer += `\n💡 **实施建议：**\n`;
@@ -214,10 +193,9 @@ function generateAnswer(question, matches) {
     };
   }
   
-  // 智能兜底回答 - 根据问题特征给出相关建议
+  // 智能兜底回答
   let smartAnswer = `感谢您的提问："${question}"。\n\n`;
   
-  // 检查问题类型，给出针对性建议
   if (questionLower.includes('如何') || questionLower.includes('怎么') || questionLower.includes('怎样')) {
     smartAnswer += `我理解您想了解具体的操作方法。基于安全生产最佳实践，我建议您：\n\n`;
     smartAnswer += `**基本原则：**\n`;
@@ -232,19 +210,19 @@ function generateAnswer(question, matches) {
     smartAnswer += `• 需要遵循相关法律法规和标准规范\n`;
     smartAnswer += `• 企业承担安全生产主体责任\n`;
     smartAnswer += `• 持续改进和风险管控是关键\n\n`;
-  } else if (questionLower.includes('要求') || questionLower.includes('标准') || questionLower.includes('规定')) {
-    smartAnswer += `关于相关要求和标准，请参考：\n\n`;
-    smartAnswer += `**法规依据：**\n`;
-    smartAnswer += `• 《安全生产法》及相关法律法规\n`;
-    smartAnswer += `• 国家和行业安全标准\n`;
-    smartAnswer += `• 企业安全生产规章制度\n`;
-    smartAnswer += `• 应急管理部门相关规定\n\n`;
+  } else {
+    smartAnswer += `基于安全生产专业知识，为您提供相关指导：\n\n`;
+    smartAnswer += `**通用安全原则：**\n`;
+    smartAnswer += `• 预防为主，防患于未然\n`;
+    smartAnswer += `• 全员参与，共同维护安全\n`;
+    smartAnswer += `• 持续改进，不断提升安全水平\n`;
+    smartAnswer += `• 依法合规，严格执行标准\n\n`;
   }
   
-  smartAnswer += `**我目前的专业知识库涵盖：**\n`;
-  smartAnswer += `• 安全生产法律法规\n• 风险评估与管控\n• 应急管理\n• 隐患排查治理\n• 安全教育培训\n• 重大危险源管理\n\n`;
+  smartAnswer += `**我的专业知识库涵盖：**\n`;
+  smartAnswer += `• 安全生产法律法规  • 风险评估与管控\n• 应急管理  • 隐患排查治理\n• 安全教育培训  • 重大危险源管理\n\n`;
   
-  smartAnswer += `💡 **建议：** 您可以尝试重新描述问题，或者询问上述具体领域的相关内容，我将为您提供更准确的专业指导。`;
+  smartAnswer += `💡 **建议：** 您可以尝试询问上述具体领域的相关内容，我将为您提供更准确的专业指导。`;
   smartAnswer += `\n\n（当前为增强演示模式，持续学习优化中）`;
   
   return {
@@ -253,34 +231,7 @@ function generateAnswer(question, matches) {
     matchScore: 1
   };
 }
-  
-  const bestMatch = matches[0];
-  const knowledge = bestMatch.knowledge;
-  
-  let answer = `关于"${question}"的专业回答：\n\n`;
-  answer += knowledge.content;
-  answer += `\n\n📋 **相关要点提醒：**\n`;
-  answer += `• 所属领域：${knowledge.category}\n`;
-  answer += `• 匹配度：${bestMatch.score.toFixed(1)}分\n`;
-  
-  if (matches.length > 1) {
-    answer += `• 相关领域：${matches[1].knowledge.category}\n`;
-  }
-  
-  answer += `\n💡 **实施建议：**\n`;
-  answer += `• 结合企业实际情况制定具体措施\n`;
-  answer += `• 定期检查和更新相关制度\n`;
-  answer += `• 加强培训，提高员工认知水平\n`;
-  answer += `\n（当前为增强演示模式，基于专业安全生产知识库）`;
-  
-  return {
-    answer,
-    relatedTopics: [knowledge.category, ...(matches.length > 1 ? [matches[1].knowledge.category] : [])],
-    matchScore: bestMatch.score
-  };
-}
 
-// 处理POST请求
 // 处理POST请求
 export async function POST(request) {
   try {
@@ -295,34 +246,26 @@ export async function POST(request) {
 
     console.log('收到问题:', question);
 
-   if (true) {
-      // 增强演示模式
-      const matches = findBestMatch(question);
-      console.log(`找到 ${matches.length} 个匹配项:`, matches.map(m => m.matchInfo));
+    // 智能匹配和回答
+    const matches = findBestMatch(question);
+    console.log(`找到 ${matches.length} 个匹配项:`, matches.map(m => m.matchInfo));
 
-      // 模拟思考时间
-      await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
+    // 模拟思考时间
+    await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
 
-      const result = generateAnswer(question, matches);
-      
-      console.log(`生成增强回答，长度: ${result.answer.length}, 匹配分数: ${result.matchScore}`);
+    const result = generateAnswer(question, matches);
+    
+    console.log(`生成回答，长度: ${result.answer.length}, 匹配分数: ${result.matchScore}`);
 
-      return NextResponse.json({
-        success: true,
-        answer: result.answer,
-        relatedTopics: result.relatedTopics,
-        timestamp: new Date().toISOString(),
-        tokensUsed: Math.floor(result.answer.length / 4),
-        mode: "enhanced_demo",
-        matchScore: result.matchScore
-      });
-    } else {
-      // 真实API模式（当需要时使用）
-      return NextResponse.json({
-        success: false,
-        error: '真实AI模式暂时不可用，请使用演示模式'
-      }, { status: 503 });
-    }
+    return NextResponse.json({
+      success: true,
+      answer: result.answer,
+      relatedTopics: result.relatedTopics,
+      timestamp: new Date().toISOString(),
+      tokensUsed: Math.floor(result.answer.length / 4),
+      mode: "enhanced_demo",
+      matchScore: result.matchScore
+    });
 
   } catch (error) {
     console.error('AI Chat API错误:', error);
