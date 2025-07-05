@@ -1,513 +1,230 @@
-// src/app/api/ai-chat/route.js - 大幅优化版本
+// src/app/api/ai-chat/route.js - 智谱AI集成版本
 import { NextResponse } from 'next/server';
 
-// 超级优化的安全生产知识库
-const enhancedSafetyKnowledge = [
+// 配置
+const AI_MODE = process.env.AI_MODE || 'hybrid'; // hybrid | local | zhipu
+const ZHIPU_API_KEY = process.env.ZHIPU_API_KEY;
+const USE_CACHE = true; // 启用缓存降低成本
+const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24小时缓存
+
+// 简单内存缓存（生产环境建议使用Redis）
+const responseCache = new Map();
+
+// 安全生产知识库（保留用于混合模式）
+const safetyKnowledge = [
   {
     id: 1,
     category: "安全生产法律法规",
     keywords: [
-      // 核心法规
       "安全生产法", "法律", "法规", "主体责任", "安全责任制", "法律责任",
-      // 制度建设
       "安全管理制度", "制度建立", "制度建设", "规章制度", "管理制度", "制度体系", "操作规程",
       "安全标准化", "管理体系", "责任体系", "考核制度", "奖惩制度",
-      // 监管执法
       "监督检查", "执法检查", "行政处罚", "停产整顿", "关闭取缔",
-      // 权利义务
       "从业人员权利", "知情权", "建议权", "举报权", "拒绝权", "紧急避险权"
     ],
     content: `《安全生产法》是我国安全生产领域的基本法律，确立了"安全第一、预防为主、综合治理"的安全生产方针。
 
-**法律要点：**
-• **主体责任**：生产经营单位是安全生产责任主体，主要负责人对本单位安全生产工作全面负责
-• **安全责任制**：建立健全全员安全生产责任制，明确各级、各岗位人员的安全职责
-• **安全投入**：保证安全生产所必需的资金投入，建立安全生产费用提取和使用制度
-
-**制度建设要求：**
-• 制定安全生产规章制度和操作规程
-• 建立安全生产标准化管理体系
-• 完善安全生产责任制和考核制度
-• 建立安全生产教育培训制度
-
-**从业人员权利：**
-• 知情权：了解作业场所和工作岗位的危险因素、防范措施及事故应急措施
-• 建议权：对安全生产工作提出建议
-• 举报权：发现事故隐患或违法行为时进行举报
-• 拒绝权：拒绝违章指挥和强令冒险作业
-• 紧急避险权：发现直接危及人身安全的紧急情况时停止作业或撤离现场
-
-**监管要求：**
-生产经营单位应当接受安全生产监督管理部门依法实施的监督检查，如实提供有关资料，不得拒绝、阻挠。`,
-    relatedTopics: ["安全责任制", "安全管理制度", "从业人员权利", "安全监管"]
+**主要内容：**
+• **主体责任**：生产经营单位是安全生产责任主体
+• **安全责任制**：建立健全全员安全生产责任制
+• **安全投入**：保证安全生产所必需的资金投入
+• **制度建设**：制定安全生产规章制度和操作规程
+• **教育培训**：对从业人员进行安全生产教育培训
+• **监督管理**：接受安全生产监督检查`,
+    complexity: 3
   },
   {
     id: 2,
-    category: "风险评估与管控",
+    category: "风险评估与管控", 
     keywords: [
-      // 风险识别
       "风险评估", "风险识别", "危险源", "风险分析", "危险因素", "有害因素",
       "风险管控", "风险控制", "管控措施", "控制措施", "防控措施",
-      // 评估方法
       "LEC法", "风险矩阵", "定性评估", "定量评估", "危险性评价",
       "作业条件危险性评价", "工作危害分析", "JHA", "JSA",
-      // 管控策略
-      "风险分级", "分级管控", "红橙黄蓝", "四色风险", "风险清单",
-      "管控责任", "管控标准", "消除", "替代", "工程控制", "管理控制", "个体防护"
+      "风险分级", "分级管控", "红橙黄蓝", "四色风险", "风险清单"
     ],
     content: `风险评估是安全生产管理的核心环节，通过系统性识别、分析和评价风险，制定相应的管控措施。
 
 **风险评估流程：**
 • **风险识别**：识别作业活动中可能导致人员伤亡的危险因素
-• **风险分析**：分析风险发生的可能性和严重程度
+• **风险分析**：分析风险发生的可能性和严重程度  
 • **风险评价**：确定风险等级，判断风险是否可接受
 • **风险控制**：制定并实施风险管控措施
 
 **常用评估方法：**
 • **LEC法**：L(可能性) × E(暴露频率) × C(后果严重度)
-  - D = L × E × C，风险值越大风险越高
-  - D≥320为极其危险，需立即整改
 • **风险矩阵法**：可能性与严重程度二维矩阵评价
-• **工作危害分析(JHA)**：将作业分解为步骤，逐步识别危险
-
-**风险分级管控：**
-• **红色风险(重大风险)**：公司领导管控，制定专项管控方案
-• **橙色风险(较大风险)**：部门负责人管控，定期检查评估
-• **黄色风险(一般风险)**：班组长管控，日常巡查监督
-• **蓝色风险(低风险)**：岗位员工管控，严格按规程操作
-
-**管控措施层级：**
-1. **消除**：从根本上消除危险源
-2. **替代**：用较安全的材料、设备、工艺替代
-3. **工程控制**：安全防护设施、监测报警系统
-4. **管理控制**：制度规程、培训教育、定期检查
-5. **个体防护**：个人防护用品的正确使用
-
-**实施要点：**
-• 建立风险评估制度，定期开展风险评估
-• 制定风险清单和管控措施清单
-• 明确各级管控责任，确保措施落实
-• 动态评估，及时调整管控措施`,
-    relatedTopics: ["危险源辨识", "LEC评价法", "风险分级", "管控措施"]
+• **工作危害分析(JHA)**：将作业分解为步骤，逐步识别危险`,
+    complexity: 4
   },
   {
     id: 3,
     category: "应急管理与预案",
     keywords: [
-      // 应急预案
       "应急预案", "应急管理", "应急响应", "应急处置", "应急救援",
       "综合应急预案", "专项应急预案", "现场处置方案",
-      // 应急组织
       "应急组织", "应急指挥", "应急队伍", "救援队伍", "指挥体系",
-      "应急职责", "应急分工", "应急联系",
-      // 应急演练
       "应急演练", "演练计划", "演练方案", "演练评估", "演练总结",
-      "桌面演练", "实战演练", "综合演练", "专项演练",
-      // 应急保障
-      "应急物资", "应急设备", "应急通讯", "应急避险", "疏散撤离",
-      "医疗救护", "环境监测", "舆情应对"
+      "应急物资", "应急设备", "应急通讯", "应急避险", "疏散撤离"
     ],
-    content: `应急管理是企业安全生产的重要保障，通过建立完善的应急管理体系，确保在事故发生时能够迅速、有效地开展应急救援。
+    content: `应急管理是企业安全生产的重要保障，确保在事故发生时能够迅速、有效地开展应急救援。
 
 **应急预案体系：**
 • **综合应急预案**：企业总体应急组织机构、职责、程序
-• **专项应急预案**：针对特定类型事故的专门预案(火灾、爆炸、中毒等)
+• **专项应急预案**：针对特定类型事故的专门预案
 • **现场处置方案**：具体岗位、具体部位的现场应急处置措施
 
-**应急组织架构：**
-• **应急指挥部**：企业主要负责人任总指挥，统一指挥应急救援
-• **应急工作组**：
-  - 抢险救援组：负责现场抢险救援
-  - 疏散警戒组：负责人员疏散和现场警戒
-  - 医疗救护组：负责伤员救治和医疗保障
-  - 后勤保障组：负责物资供应和生活保障
-  - 通讯联络组：负责信息传递和对外联系
-
 **应急演练要求：**
-• **演练频次**：
-  - 综合应急预案：每年至少1次
-  - 专项应急预案：每半年至少1次
-  - 现场处置方案：每季度至少1次
-• **演练类型**：
-  - 桌面演练：室内讨论式演练，成本低、参与面广
-  - 实战演练：实际操作演练，检验真实应急能力
-• **演练评估**：演练结束后及时总结，发现问题并改进
-
-**应急物资保障：**
-• **抢险救援物资**：消防器材、堵漏器材、防护用品
-• **医疗救护物资**：急救药品、医疗器械、救护设备
-• **生活保障物资**：食品、饮水、临时住所
-• **通讯保障**：对讲机、卫星电话、应急通讯设备
-
-**应急响应程序：**
-1. **信息报告**：第一时间报告事故信息
-2. **应急启动**：启动相应级别应急响应
-3. **现场处置**：开展现场抢险救援
-4. **扩大应急**：必要时请求外部支援
-5. **应急恢复**：事故控制后的恢复工作
-6. **应急终止**：宣布应急结束，总结评估
-
-**关键成功因素：**
-• 建立健全应急管理制度
-• 配备充足的应急资源
-• 定期开展应急培训演练
-• 与外部救援力量建立联系
-• 持续改进应急管理体系`,
-    relatedTopics: ["应急预案编制", "应急演练", "应急物资", "应急响应"]
-  },
-  {
-    id: 4,
-    category: "隐患排查治理",
-    keywords: [
-      // 隐患排查
-      "隐患排查", "安全检查", "隐患治理", "隐患整改", "排查治理",
-      "日常排查", "定期排查", "专项排查", "综合排查",
-      "自查自纠", "互查互纠", "专业检查", "节前检查", "季节性检查",
-      // 隐患分类
-      "一般隐患", "重大隐患", "隐患分级", "隐患识别", "隐患分析",
-      "物的不安全状态", "人的不安全行为", "管理缺陷", "环境因素",
-      // 治理措施
-      "整改措施", "整改计划", "整改责任", "整改验收", "整改档案",
-      "五定原则", "闭环管理", "销号制度", "跟踪检查"
-    ],
-    content: `隐患排查治理是预防事故的重要手段，通过系统性的隐患排查和有效治理，消除事故隐患，防范安全事故发生。
-
-**隐患分类：**
-• **按危险程度分类**：
-  - 一般事故隐患：危害程度较小，可能导致一般事故
-  - 重大事故隐患：危害程度严重，可能导致重大以上事故
-• **按隐患性质分类**：
-  - 人的不安全行为：违章操作、违章指挥、违反劳动纪律
-  - 物的不安全状态：设备缺陷、防护不当、环境不良
-  - 管理缺陷：制度不完善、执行不到位、监督不力
-
-**排查方式：**
-• **日常排查**：岗位员工每班进行，发现并处理一般隐患
-• **定期排查**：部门每周、车间每月、公司每季度开展
-• **专项排查**：针对特定设备、特殊作业、重点部位开展
-• **综合排查**：重大节假日、特殊时期、事故后开展
-
-**排查重点：**
-• **设备设施**：特种设备、关键设备的安全状况
-• **作业环境**：温度、湿度、噪声、有毒有害气体
-• **作业行为**：是否严格按规程操作，是否佩戴防护用品
-• **管理制度**：制度是否健全，执行是否到位
-• **应急准备**：应急设施、器材是否完好有效
-
-**治理原则（五定原则）**：
-• **定整改责任人**：明确具体负责整改的责任人
-• **定整改措施**：制定具体可行的整改措施
-• **定整改资金**：落实整改所需资金来源
-• **定整改时限**：明确整改完成的时间要求
-• **定整改预案**：制定整改过程中的安全预案
-
-**闭环管理流程：**
-1. **发现隐患**：通过各种排查方式发现隐患
-2. **登记建档**：建立隐患台账，记录详细信息
-3. **制定措施**：按照五定原则制定整改措施
-4. **督促整改**：跟踪检查整改进展情况
-5. **验收销号**：整改完成后组织验收，确认销号
-6. **总结分析**：分析隐患产生原因，防止重复发生
-
-**重大隐患治理要求：**
-• 制定专项治理方案
-• 落实专项资金保障
-• 实行挂牌督办制度
-• 治理期间加强监控
-• 不能立即治理的制定防范措施
-
-**信息化管理：**
-• 建立隐患排查治理信息系统
-• 实现隐患信息的动态管理
-• 统计分析隐患规律和趋势
-• 提升隐患管理效率和质量`,
-    relatedTopics: ["安全检查", "隐患分级", "整改措施", "闭环管理"]
-  },
-  {
-    id: 5,
-    category: "安全教育培训",
-    keywords: [
-      // 培训体系
-      "安全培训", "安全教育", "三级教育", "岗前培训", "在岗培训",
-      "转岗培训", "特种作业培训", "管理人员培训", "继续教育",
-      // 培训内容
-      "安全意识", "安全知识", "安全技能", "操作规程", "应急处置",
-      "事故案例", "安全法规", "职业卫生", "防护用品", "安全标志",
-      // 培训方式
-      "理论学习", "实操训练", "现场教学", "案例分析", "事故反思",
-      "安全活动", "竞赛比武", "观摩学习", "警示教育", "体验式培训",
-      // 培训管理
-      "培训计划", "培训档案", "培训考核", "培训效果", "持证上岗",
-      "培训记录", "学时要求", "复审换证", "培训资质"
-    ],
-    content: `安全教育培训是提高从业人员安全素质、防范事故发生的重要手段。建立健全安全教育培训制度，确保全员受教育、全员提素质。
-
-**三级安全教育：**
-• **厂级教育**（不少于24学时）：
-  - 安全生产法律法规、规章制度
-  - 企业安全生产状况和基本安全知识
-  - 事故应急处理、职业病防护知识
-  - 重大危险源和重大事故隐患情况
-
-• **车间级教育**（不少于16学时）：
-  - 车间安全生产状况和安全管理制度
-  - 作业环境、危险因素和安全防护知识
-  - 安全设施、个人防护用品的使用和维护
-  - 事故应急救援知识和报告程序
-
-• **班组级教育**（不少于8学时）：
-  - 岗位安全操作规程和安全注意事项
-  - 岗位间工作衔接配合的安全事项
-  - 岗位易发事故和应急处理措施
-  - 劳动防护用品的正确使用方法
-
-**特种作业人员培训：**
-• **培训对象**：电工、焊工、起重机械操作工、压力容器操作工等
-• **培训要求**：必须经专门培训，考试合格取得操作资格证书
-• **证书管理**：定期复审，每3年复审一次
-• **持证上岗**：严禁无证上岗或证书过期上岗
-
-**管理人员培训：**
-• **主要负责人**：年度培训不少于48学时
-• **安全管理人员**：年度培训不少于40学时
-• **培训内容**：安全法规、管理知识、应急管理、事故调查等
-
-**培训方式创新：**
-• **理论与实践结合**：课堂教学与现场操作相结合
-• **案例式教学**：通过事故案例分析提高安全意识
-• **体验式培训**：VR安全体验、安全体验馆等
-• **互动式学习**：研讨交流、经验分享、知识竞赛
-• **信息化培训**：在线学习平台、手机APP、微课堂
-
-**培训效果评估：**
-• **知识考核**：理论知识笔试，合格分数80分以上
-• **技能考核**：实际操作技能考核，现场演示
-• **行为观察**：培训后行为改变情况跟踪观察
-• **事故统计**：培训前后事故发生率对比分析
-
-**建立培训档案：**
-• 培训计划和实施情况
-• 培训人员基本信息
-• 培训内容和学时记录
-• 考核成绩和证书情况
-• 培训效果评估结果
-
-**培训保障措施：**
-• 制定年度培训计划，纳入年度工作安排
-• 保证培训经费投入，专款专用
-• 配备专兼职培训师资队伍
-• 建设培训场所和设施设备
-• 建立培训考核激励机制
-
-**持续改进：**
-• 定期评估培训效果，持续改进培训方法
-• 根据新法规、新工艺、新设备及时更新培训内容
-• 学习借鉴先进企业培训经验
-• 建立培训效果反馈机制，不断提升培训质量`,
-    relatedTopics: ["三级教育", "特种作业", "培训档案", "持证上岗"]
-  },
-  {
-    id: 6,
-    category: "重大危险源管理",
-    keywords: [
-      // 基本概念
-      "重大危险源", "危险化学品", "重大危险源辨识", "临界量", "危险单元",
-      "重大危险源申报", "重大危险源评估", "重大危险源备案",
-      // 分级管控
-      "重大危险源分级", "一级重大危险源", "二级重大危险源",
-      "三级重大危险源", "四级重大危险源", "分级标准", "安全评估",
-      // 监控管理
-      "安全监控", "监测监控", "视频监控", "参数监测", "报警系统",
-      "安全仪表", "紧急停车", "联锁保护", "数据采集", "远程监控",
-      // 应急管理
-      "应急预案", "应急演练", "应急物资", "应急队伍", "应急响应",
-      "专项应急预案", "现场处置方案", "事故应急", "救援预案"
-    ],
-    content: `重大危险源是指长期或临时生产、搬运、使用或贮存危险物品，且危险物品的数量等于或超过临界量的单元。
-
-**重大危险源辨识：**
-• **判定标准**：危险物品数量 ≥ 临界量
-• **计算方法**：∑(q₁/Q₁ + q₂/Q₂ + ... + qₙ/Qₙ) ≥ 1
-  - q₁, q₂, ..., qₙ：每种危险物品的实际存在量
-  - Q₁, Q₂, ..., Qₙ：对应危险物品的临界量
-• **危险单元**：一个(套)生产装置、设施或场所
-
-**分级标准：**
-• **一级**：R ≥ 100（极高危险）
-• **二级**：100 > R ≥ 50（高度危险）
-• **三级**：50 > R ≥ 10（中度危险）
-• **四级**：R < 10（一般危险）
-其中：R = α×β×γ×δ（校正系数）
-
-**安全管理要求：**
-• **建立专门安全管理制度**：重大危险源安全管理制度、操作规程
-• **设置安全监测监控系统**：温度、压力、液位、浓度等参数监测
-• **配备专业安全管理人员**：具有相应专业知识和经验
-• **定期进行安全评估**：每3年进行一次安全评估
-• **制定专项应急预案**：针对可能发生的事故类型制定预案
-
-**监测监控系统：**
-• **参数监测**：
-  - 温度、压力、液位、流量监测
-  - 可燃气体、有毒气体浓度监测
-  - 关键设备运行状态监测
-• **报警功能**：
-  - 参数超限声光报警
-  - 分级报警和记录功能
-  - 报警信号传输至控制室
-• **联锁保护**：
-  - 安全仪表系统(SIS)
-  - 紧急停车系统(ESD)
-  - 自动保护和手动干预
-
-**档案管理：**
-• **基本情况**：位置、类型、数量、工艺等
-• **安全评估报告**：定期安全评估结果
-• **监测记录**：日常监测数据和异常情况
-• **检查记录**：安全检查和隐患整改情况
-• **事故记录**：历史事故和处理情况
-
-**应急管理：**
-• **专项应急预案**：
-  - 可能的事故类型和危害程度分析
-  - 应急组织机构和职责分工
-  - 预防措施和应急处置程序
-  - 应急设施设备和物资保障
-• **应急演练**：每年至少组织一次综合应急演练
-• **应急联动**：与地方政府应急部门建立联动机制
-
-**监督管理：**
-• **申报登记**：向安监部门申报登记，获得登记证明
-• **定期检查**：安监部门定期监督检查
-• **信息报送**：重大危险源基本情况变化及时报送
-• **事故报告**：发生事故按规定及时报告
-
-**技术措施：**
-• 采用先进适用的安全技术和设备
-• 设置必要的安全防护设施
-• 建立完善的安全监测监控系统
-• 配备相应的应急救援器材设备
-• 定期检测检验，确保安全可靠
-
-**关键控制要点：**
-• 严格按设计规范进行建设和改造
-• 建立完善的安全管理制度和操作规程
-• 加强人员培训，提高安全操作技能
-• 定期开展安全评估，及时消除隐患
-• 完善应急预案，提高应急处置能力`,
-    relatedTopics: ["危险源辨识", "安全评估", "监测监控", "应急预案"]
+• 综合应急预案：每年至少1次
+• 专项应急预案：每半年至少1次  
+• 现场处置方案：每季度至少1次`,
+    complexity: 4
   }
 ];
 
-// 超级智能匹配算法
-function findBestMatch(question) {
+// 智能路由：决定使用本地知识库还是智谱AI
+function getResponseStrategy(question) {
+  const questionLower = question.toLowerCase();
+  
+  // 分析问题复杂度
+  const complexity = analyzeQuestionComplexity(question);
+  
+  // 检查本地知识库匹配度
+  const localMatches = findLocalMatches(question);
+  const hasGoodLocalMatch = localMatches.length > 0 && localMatches[0].score > 8;
+  
+  console.log(`问题复杂度: ${complexity}, 本地匹配数: ${localMatches.length}, 最佳匹配分数: ${localMatches[0]?.score || 0}`);
+  
+  // 路由决策逻辑
+  if (AI_MODE === 'local') {
+    return 'local';
+  } else if (AI_MODE === 'zhipu') {
+    return 'zhipu';
+  } else { // hybrid模式
+    // 简单问题且有好的本地匹配 → 使用本地
+    if (complexity <= 3 && hasGoodLocalMatch) {
+      return 'local';
+    }
+    // 复杂问题或本地匹配不佳 → 使用智谱AI
+    else {
+      return 'zhipu';
+    }
+  }
+}
+
+// 分析问题复杂度 (1-5级)
+function analyzeQuestionComplexity(question) {
+  let complexity = 1;
+  
+  // 长度因子
+  if (question.length > 20) complexity += 1;
+  if (question.length > 50) complexity += 1;
+  
+  // 关键词因子
+  const complexKeywords = ['如何实施', '具体步骤', '详细流程', '最佳实践', '案例分析', '对比分析'];
+  if (complexKeywords.some(keyword => question.includes(keyword))) {
+    complexity += 2;
+  }
+  
+  // 多概念因子
+  const conceptCount = question.split(/[，、；和与及]/).length;
+  if (conceptCount > 2) complexity += 1;
+  
+  // 问题类型因子
+  if (question.includes('为什么') || question.includes('原因')) complexity += 1;
+  if (question.includes('对比') || question.includes('区别')) complexity += 2;
+  
+  return Math.min(complexity, 5);
+}
+
+// 本地知识库匹配
+function findLocalMatches(question) {
   let allMatches = [];
   const questionLower = question.toLowerCase();
   
-  // 移除标点符号并分词
-  const questionWords = questionLower
-    .replace(/[？？。！，、；：""''（）【】\s]+/g, ' ')
-    .split(' ')
-    .filter(word => word.length > 0);
-  
-  console.log('用户问题分词：', questionWords);
-  
-  enhancedSafetyKnowledge.forEach(knowledge => {
+  safetyKnowledge.forEach(knowledge => {
     let matchScore = 0;
     let matchedKeywords = [];
     
-    // 1. 精确关键词匹配（高权重）
+    // 关键词匹配
     knowledge.keywords.forEach(keyword => {
       if (questionLower.includes(keyword)) {
-        matchScore += keyword.length * 3; // 长关键词权重更高
+        matchScore += keyword.length * 2;
         matchedKeywords.push(keyword);
       }
     });
-    
-    // 2. 分词匹配（中权重）
-    questionWords.forEach(word => {
-      if (word.length > 1) { // 忽略单字
-        knowledge.keywords.forEach(keyword => {
-          if (keyword.includes(word) || word.includes(keyword)) {
-            matchScore += word.length;
-            if (!matchedKeywords.includes(keyword)) {
-              matchedKeywords.push(keyword);
-            }
-          }
-        });
-      }
-    });
-    
-    // 3. 问题类型识别（特殊加分）
-    const questionPatterns = {
-      "如何": ["建立", "制定", "做", "实施", "开展", "管理", "控制"],
-      "什么": ["定义", "概念", "内容", "要求", "规定", "标准"],
-      "有哪些": ["类型", "方法", "措施", "要求", "内容", "规定"],
-      "要求": ["规定", "标准", "条件", "程序", "制度"],
-      "管理": ["制度", "办法", "规定", "措施", "体系"]
-    };
-    
-    Object.entries(questionPatterns).forEach(([pattern, relatedWords]) => {
-      if (questionLower.includes(pattern)) {
-        relatedWords.forEach(word => {
-          if (questionLower.includes(word) || knowledge.keywords.some(k => k.includes(word))) {
-            matchScore += 5;
-          }
-        });
-      }
-    });
-    
-    // 4. 语义相关性匹配（补充匹配）
-    const semanticBonus = getSemanticBonus(questionLower, knowledge.category);
-    matchScore += semanticBonus;
     
     if (matchScore > 0) {
       allMatches.push({
         knowledge,
         score: matchScore,
-        matchedKeywords,
-        matchInfo: `匹配分数: ${matchScore.toFixed(1)}, 匹配关键词: [${matchedKeywords.join(', ')}]`
+        matchedKeywords
       });
     }
   });
   
-  // 按分数排序
-  allMatches.sort((a, b) => b.score - a.score);
-  
-  console.log('所有匹配结果：', allMatches.map(m => ({
-    category: m.knowledge.category,
-    score: m.score,
-    keywords: m.matchedKeywords
-  })));
-  
-  return allMatches;
+  return allMatches.sort((a, b) => b.score - a.score);
 }
 
-// 语义相关性加分
-function getSemanticBonus(question, category) {
-  const semanticMap = {
-    "安全生产法律法规": ["制度", "建立", "管理", "责任", "法规", "要求"],
-    "风险评估与管控": ["风险", "评估", "控制", "管控", "措施", "防范", "LEC", "矩阵"],
-    "应急管理与预案": ["应急", "预案", "演练", "救援", "处置", "响应"],
-    "隐患排查治理": ["隐患", "排查", "检查", "整改", "治理", "发现"],
-    "安全教育培训": ["培训", "教育", "学习", "考核", "证书", "持证"],
-    "重大危险源管理": ["危险源", "监控", "辨识", "分级", "评估"]
-  };
+// 智谱AI调用
+async function callZhipuAI(question) {
+  if (!ZHIPU_API_KEY) {
+    throw new Error('智谱AI密钥未配置');
+  }
   
-  const relatedWords = semanticMap[category] || [];
-  let bonus = 0;
-  
-  relatedWords.forEach(word => {
-    if (question.includes(word)) {
-      bonus += 2;
+  const systemPrompt = `你是一位专业的安全生产专家，具有丰富的安全管理经验。请基于以下要求回答用户问题：
+
+1. 回答要准确、专业、实用
+2. 内容要结构化，使用合适的格式（如**粗体**、• 列表等）
+3. 涉及法规时要引用具体条文
+4. 提供具体的实施建议和操作指导
+5. 回答长度控制在500-800字
+6. 语言要通俗易懂，避免过于学术化
+
+请专注于安全生产领域，如果问题不相关，请友好地引导用户询问安全生产相关问题。`;
+
+  try {
+    console.log('调用智谱AI...');
+    const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${ZHIPU_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: "glm-4",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: question }
+        ],
+        temperature: 0.3,
+        max_tokens: 1000
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('智谱AI调用失败:', response.status, errorData);
+      throw new Error(`智谱AI调用失败: ${response.status}`);
     }
-  });
-  
-  return bonus;
+    
+    const data = await response.json();
+    console.log('智谱AI调用成功, tokens使用:', data.usage);
+    
+    return {
+      answer: data.choices[0].message.content,
+      tokensUsed: data.usage.total_tokens,
+      model: 'glm-4'
+    };
+    
+  } catch (error) {
+    console.error('智谱AI调用错误:', error);
+    throw error;
+  }
 }
 
-// 超级智能回答生成
-function generateIntelligentAnswer(question, matches) {
+// 本地知识库回答生成
+function generateLocalAnswer(question, matches) {
   if (matches.length === 0) {
     return generateFallbackAnswer(question);
   }
@@ -515,142 +232,91 @@ function generateIntelligentAnswer(question, matches) {
   const bestMatch = matches[0];
   const knowledge = bestMatch.knowledge;
   
-  // 根据问题类型调整回答风格
   let answer = `关于"${question}"的专业回答：\n\n`;
+  answer += knowledge.content;
   
-  // 问题类型识别
-  if (question.includes("如何") || question.includes("怎么") || question.includes("怎样")) {
-    answer += `${knowledge.content}\n\n**具体实施建议：**\n`;
-    answer += generateImplementationGuidance(knowledge.category);
-  } else if (question.includes("什么") || question.includes("哪些")) {
-    answer += `${knowledge.content}\n\n**要点总结：**\n`;
-    answer += generateKeyPointsSummary(knowledge.category);
-  } else if (question.includes("要求") || question.includes("规定") || question.includes("标准")) {
-    answer += `${knowledge.content}\n\n**核心要求：**\n`;
-    answer += generateRequirementsSummary(knowledge.category);
-  } else {
-    answer += knowledge.content;
-  }
-  
-  // 添加相关建议
   answer += "\n\n**相关建议：**\n";
   answer += "• 结合企业实际情况制定具体措施\n";
   answer += "• 定期检查和更新相关制度\n";
   answer += "• 加强培训，提高员工认知水平\n";
   
-  // 添加匹配信息（调试用）
   answer += `\n\n- 所属领域：${knowledge.category}`;
   answer += `\n- 匹配度：${bestMatch.score.toFixed(1)}分`;
-  answer += `\n（当前为增强演示模式，基于专业安全生产知识库）`;
+  answer += `\n（本地知识库回答）`;
   
   return {
     answer,
-    relatedTopics: [knowledge.category, ...(matches.length > 1 ? [matches[1].knowledge.category] : [])],
-    matchScore: bestMatch.score
+    relatedTopics: [knowledge.category],
+    matchScore: bestMatch.score,
+    source: 'local'
   };
 }
 
-// 兜底回答生成
+// 兜底回答
 function generateFallbackAnswer(question) {
-  const questionType = analyzeQuestionType(question);
-  
   let answer = `感谢您的提问："${question}"。\n\n`;
+  answer += `基于安全生产最佳实践，我建议您：\n\n`;
+  answer += `**基本原则：**\n`;
+  answer += `• 遵循"安全第一、预防为主、综合治理"方针\n`;
+  answer += `• 建立健全安全生产责任制\n`;
+  answer += `• 定期开展安全检查和隐患排查\n`;
+  answer += `• 加强安全教育培训\n\n`;
   
-  if (questionType.includes("如何") || questionType.includes("方法")) {
-    answer += `我理解您想了解具体的操作方法。基于安全生产最佳实践，我建议您：\n\n`;
-    answer += `**基本原则：**\n`;
-    answer += `• 遵循"安全第一、预防为主、综合治理"方针\n`;
-    answer += `• 建立健全安全生产责任制\n`;
-    answer += `• 定期开展安全检查和隐患排查\n`;
-    answer += `• 加强安全教育培训\n\n`;
-    answer += `**具体建议：**\n`;
-    answer += `• 制定相关制度和操作规程\n`;
-    answer += `• 明确责任分工和考核标准\n`;
-    answer += `• 建立持续改进机制\n`;
-    answer += `• 定期评估实施效果\n`;
-  } else if (questionType.includes("什么") || questionType.includes("定义")) {
-    answer += `这是一个关于安全生产基本概念的问题。\n\n`;
-    answer += `**安全生产基本要素包括：**\n`;
-    answer += `• 法律法规：安全生产法等相关法规要求\n`;
-    answer += `• 制度建设：安全管理制度和操作规程\n`;
-    answer += `• 教育培训：提高员工安全意识和技能\n`;
-    answer += `• 隐患治理：及时发现和消除安全隐患\n`;
-    answer += `• 应急管理：建立完善的应急救援体系\n`;
-  } else {
-    answer += `关于您的问题，建议您可以从以下角度考虑：\n\n`;
-    answer += `• **法规要求**：查阅相关安全生产法规标准\n`;
-    answer += `• **行业实践**：参考同行业最佳实践经验\n`;
-    answer += `• **专业指导**：咨询专业安全技术服务机构\n`;
-    answer += `• **培训学习**：参加相关安全管理培训\n`;
+  answer += `**推荐咨询领域：**\n`;
+  answer += `• 安全生产法律法规\n`;
+  answer += `• 风险评估与管控\n`;
+  answer += `• 应急管理与预案\n`;
+  
+  answer += `\n（智能兜底回答）`;
+  
+  return {
+    answer,
+    relatedTopics: ["安全生产管理"],
+    matchScore: 1.0,
+    source: 'fallback'
+  };
+}
+
+// 缓存管理
+function getCacheKey(question) {
+  return `ai_chat_${Buffer.from(question).toString('base64')}`;
+}
+
+function getFromCache(question) {
+  if (!USE_CACHE) return null;
+  
+  const cacheKey = getCacheKey(question);
+  const cached = responseCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    console.log('返回缓存结果');
+    return cached.data;
   }
   
-  answer += `\n\n**推荐咨询领域：**\n`;
-  answer += `如果您的问题涉及：\n`;
-  answer += `• 法规制度相关 → 请询问"安全生产法律法规"\n`;
-  answer += `• 风险管控相关 → 请询问"风险评估与管控"\n`;
-  answer += `• 应急管理相关 → 请询问"应急管理与预案"\n`;
-  answer += `• 隐患排查相关 → 请询问"隐患排查治理"\n`;
-  answer += `• 教育培训相关 → 请询问"安全教育培训"\n`;
-  answer += `• 危险源管理相关 → 请询问"重大危险源管理"\n`;
-  
-  answer += `\n（当前为增强演示模式，持续学习优化中）`;
-  
-  return {
-    answer,
-    relatedTopics: ["安全生产管理", "咨询指导"],
-    matchScore: 1.0
-  };
+  return null;
 }
 
-// 问题类型分析
-function analyzeQuestionType(question) {
-  const patterns = ["如何", "怎么", "怎样", "什么", "哪些", "要求", "规定", "标准", "方法", "措施"];
-  return patterns.filter(pattern => question.includes(pattern));
-}
-
-// 生成实施指导
-function generateImplementationGuidance(category) {
-  const guidelines = {
-    "安全生产法律法规": "• 学习相关法律法规\n• 建立责任制度\n• 定期检查更新\n• 加强监督执行",
-    "风险评估与管控": "• 组建评估团队\n• 选择适当方法\n• 制定管控措施\n• 定期评估更新",
-    "应急管理与预案": "• 成立应急组织\n• 编制应急预案\n• 配备应急物资\n• 定期演练评估",
-    "隐患排查治理": "• 建立排查制度\n• 培训排查人员\n• 落实整改措施\n• 验收销号管理",
-    "安全教育培训": "• 制定培训计划\n• 准备培训内容\n• 组织实施培训\n• 考核评估效果",
-    "重大危险源管理": "• 辨识分级评估\n• 建立监控系统\n• 制定管理制度\n• 定期安全评估"
-  };
+function setCache(question, data) {
+  if (!USE_CACHE) return;
   
-  return guidelines[category] || "• 制定实施计划\n• 明确责任分工\n• 配置必要资源\n• 持续改进完善";
-}
-
-// 生成要点总结
-function generateKeyPointsSummary(category) {
-  const summaries = {
-    "安全生产法律法规": "• 安全生产法是基本法律\n• 企业承担主体责任\n• 建立安全责任制\n• 保障安全投入",
-    "风险评估与管控": "• 识别分析评价风险\n• 制定管控措施\n• 分级分类管理\n• 持续监控改进",
-    "应急管理与预案": "• 建立应急组织\n• 编制应急预案\n• 配备应急资源\n• 定期演练完善",
-    "隐患排查治理": "• 建立排查制度\n• 分类分级管理\n• 闭环整改治理\n• 建档跟踪管理",
-    "安全教育培训": "• 三级安全教育\n• 特种作业培训\n• 持证上岗要求\n• 定期继续教育",
-    "重大危险源管理": "• 辨识登记备案\n• 分级安全管理\n• 监测监控系统\n• 应急预案演练"
-  };
+  const cacheKey = getCacheKey(question);
+  responseCache.set(cacheKey, {
+    data,
+    timestamp: Date.now()
+  });
   
-  return summaries[category] || "• 建立管理制度\n• 明确工作要求\n• 落实保障措施\n• 持续改进提升";
+  // 清理过期缓存
+  if (responseCache.size > 1000) {
+    const now = Date.now();
+    for (const [key, value] of responseCache.entries()) {
+      if (now - value.timestamp > CACHE_DURATION) {
+        responseCache.delete(key);
+      }
+    }
+  }
 }
 
-// 生成要求总结
-function generateRequirementsSummary(category) {
-  const requirements = {
-    "安全生产法律法规": "• 必须遵守安全生产法\n• 建立健全责任制\n• 保证安全投入\n• 接受监督检查",
-    "风险评估与管控": "• 定期开展风险评估\n• 制定管控措施\n• 建立风险清单\n• 实施分级管控",
-    "应急管理与预案": "• 编制应急预案\n• 建立应急队伍\n• 配备应急物资\n• 定期组织演练",
-    "隐患排查治理": "• 建立排查制度\n• 定期排查隐患\n• 及时整改治理\n• 建立排查档案",
-    "安全教育培训": "• 开展三级教育\n• 特种作业持证\n• 定期培训考核\n• 建立培训档案",
-    "重大危险源管理": "• 辨识登记申报\n• 建立监控系统\n• 制定应急预案\n• 定期安全评估"
-  };
-  
-  return requirements[category] || "• 建立相关制度\n• 明确管理要求\n• 配置必要资源\n• 确保有效实施";
-}
-
-// 处理POST请求
+// 主处理函数
 export async function POST(request) {
   try {
     const { question } = await request.json();
@@ -664,25 +330,64 @@ export async function POST(request) {
     
     console.log('收到问题:', question);
     
-    // 增强演示模式
-    const matches = findBestMatch(question);
-    console.log(`找到 ${matches.length} 个匹配项:`, matches.map(m => m.matchInfo));
+    // 检查缓存
+    const cachedResponse = getFromCache(question);
+    if (cachedResponse) {
+      return NextResponse.json({
+        ...cachedResponse,
+        fromCache: true
+      });
+    }
     
-    // 模拟思考时间
-    await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
+    // 决定使用哪种策略
+    const strategy = getResponseStrategy(question);
+    console.log('选择策略:', strategy);
     
-    const result = generateIntelligentAnswer(question, matches);
-    console.log(`生成增强回答，长度: ${result.answer.length}, 匹配分数: ${result.matchScore}`);
+    let result;
     
-    return NextResponse.json({
+    if (strategy === 'local') {
+      // 使用本地知识库
+      const matches = findLocalMatches(question);
+      result = generateLocalAnswer(question, matches);
+      
+    } else if (strategy === 'zhipu') {
+      // 使用智谱AI
+      try {
+        const zhipuResult = await callZhipuAI(question);
+        result = {
+          answer: zhipuResult.answer + '\n\n（智谱AI专业回答）',
+          relatedTopics: ['AI智能分析'],
+          tokensUsed: zhipuResult.tokensUsed,
+          source: 'zhipu',
+          model: zhipuResult.model
+        };
+      } catch (error) {
+        console.error('智谱AI调用失败，降级到本地模式:', error);
+        const matches = findLocalMatches(question);
+        result = generateLocalAnswer(question, matches);
+        result.source = 'local_fallback';
+      }
+    }
+    
+    // 构建响应
+    const response = {
       success: true,
       answer: result.answer,
       relatedTopics: result.relatedTopics,
       timestamp: new Date().toISOString(),
-      tokensUsed: Math.floor(result.answer.length / 4),
-      mode: "enhanced_demo",
+      tokensUsed: result.tokensUsed || Math.floor(result.answer.length / 4),
+      mode: AI_MODE,
+      strategy: strategy,
+      source: result.source,
       matchScore: result.matchScore
-    });
+    };
+    
+    // 缓存结果
+    setCache(question, response);
+    
+    console.log(`回答生成完成, 策略: ${strategy}, 来源: ${result.source}, 长度: ${result.answer.length}`);
+    
+    return NextResponse.json(response);
     
   } catch (error) {
     console.error('AI Chat API错误:', error);
@@ -693,23 +398,28 @@ export async function POST(request) {
   }
 }
 
-// 处理GET请求
+// GET请求 - API信息
 export async function GET() {
   return NextResponse.json({
-    message: "AI聊天API - 增强演示模式",
+    message: "AI聊天API - 智谱AI混合模式",
     features: [
-      "超级智能关键词匹配",
-      "6大安全领域知识库",
-      "详细专业回答",
-      "问题类型识别",
-      "智能兜底回答",
-      "语义相关性分析"
+      "智谱AI大模型集成",
+      "智能路由策略", 
+      "本地知识库备份",
+      "自动缓存机制",
+      "成本控制优化",
+      "错误降级处理"
     ],
-    knowledgeAreas: enhancedSafetyKnowledge.map(item => ({
+    config: {
+      mode: AI_MODE,
+      cacheEnabled: USE_CACHE,
+      zhipuConfigured: !!ZHIPU_API_KEY
+    },
+    knowledgeAreas: safetyKnowledge.map(item => ({
       category: item.category,
-      keywordCount: item.keywords.length
+      keywordCount: item.keywords.length,
+      complexity: item.complexity
     })),
-    mode: "enhanced_demo",
-    version: "2.0"
+    version: "2.0-zhipu"
   });
 }
