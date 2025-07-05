@@ -198,6 +198,7 @@ function generateAnswer(question, matches) {
 }
 
 // 处理POST请求
+// 处理POST请求
 export async function POST(request) {
   try {
     const { question } = await request.json();
@@ -211,26 +212,34 @@ export async function POST(request) {
 
     console.log('收到问题:', question);
 
-    // 模拟模式
-    const matches = findBestMatch(question);
-    console.log(`找到 ${matches.length} 个匹配项:`, matches.map(m => m.matchInfo));
+    if (MOCK_MODE) {
+      // 增强演示模式
+      const matches = findBestMatch(question);
+      console.log(`找到 ${matches.length} 个匹配项:`, matches.map(m => m.matchInfo));
 
-    // 模拟思考时间
-    await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
+      // 模拟思考时间
+      await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
 
-    const result = generateAnswer(question, matches);
-    
-    console.log(`生成增强回答，长度: ${result.answer.length}, 匹配分数: ${result.matchScore}`);
+      const result = generateAnswer(question, matches);
+      
+      console.log(`生成增强回答，长度: ${result.answer.length}, 匹配分数: ${result.matchScore}`);
 
-    return NextResponse.json({
-      success: true,
-      answer: result.answer,
-      relatedTopics: result.relatedTopics,
-      timestamp: new Date().toISOString(),
-      tokensUsed: Math.floor(result.answer.length / 4),
-      mode: "enhanced_demo",
-      matchScore: result.matchScore
-    });
+      return NextResponse.json({
+        success: true,
+        answer: result.answer,
+        relatedTopics: result.relatedTopics,
+        timestamp: new Date().toISOString(),
+        tokensUsed: Math.floor(result.answer.length / 4),
+        mode: "enhanced_demo",
+        matchScore: result.matchScore
+      });
+    } else {
+      // 真实API模式（当需要时使用）
+      return NextResponse.json({
+        success: false,
+        error: '真实AI模式暂时不可用，请使用演示模式'
+      }, { status: 503 });
+    }
 
   } catch (error) {
     console.error('AI Chat API错误:', error);
