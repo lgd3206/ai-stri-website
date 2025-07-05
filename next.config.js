@@ -10,10 +10,6 @@ const nextConfig = {
   },
   // 禁用严格模式避免额外检查
   reactStrictMode: false,
-  // 禁用遥测
-  telemetry: {
-    enabled: false,
-  },
 };
 
 module.exports = nextConfig;
