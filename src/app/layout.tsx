@@ -68,6 +68,55 @@ export default function RootLayout({
           </div>
         </footer>
         <FloatingAIButton />
+        <!-- 直接在layout.tsx或页面底部添加这段代码 -->
+<div id="floating-ai-button" style="
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  background: linear-gradient(135deg, #10b981, #059669);
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  animation: pulse 2s infinite;
+  text-decoration: none;
+  color: white;
+  font-size: 24px;
+" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">
+  🤖
+  <!-- HOT标识 -->
+  <div style="
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #ef4444;
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: bold;
+  ">AI</div>
+</div>
+
+<style>
+@keyframes pulse {
+  0% { box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4); }
+  50% { box-shadow: 0 4px 30px rgba(16, 185, 129, 0.8); }
+  100% { box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4); }
+}
+</style>
+
+<script>
+document.getElementById('floating-ai-button').onclick = function() {
+  window.location.href = '/ai-assistant';
+};
+</script>
       </body>
     </html>
   )
