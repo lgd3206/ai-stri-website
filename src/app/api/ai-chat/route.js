@@ -124,7 +124,7 @@ export async function POST(request) {
       });
     } else {
       // 真实OpenAI API模式（网络问题解决后使用）
-      const OpenAI = require('openai');
+      import openai from 'openai'
       const openai = new OpenAI({
         apiKey: process.env.OPENAI_API_KEY,
       });
