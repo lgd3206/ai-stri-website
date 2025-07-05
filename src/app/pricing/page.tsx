@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import { CreditCard, Check, Star, Shield, Users, ArrowRight, Gift } from 'lucide-react';
 
