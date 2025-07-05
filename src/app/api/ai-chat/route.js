@@ -83,48 +83,129 @@ const safetyKnowledge = [
 ];
 
 // 智能路由：决定使用本地知识库还是智谱AI
+// 更精准的智能路由：决定使用本地知识库还是智谱AI
 function getResponseStrategy(question) {
   const questionLower = question.toLowerCase();
   
-  // 分析问题复杂度
+  // 强制使用智谱AI的关键词
+  const zhipuKeywords = [
+    '详细分析', '请详细', '具体分析', '深入分析', '全面分析',
+    '如何建立', '如何实施', '如何构建', '实施步骤', '具体步骤',
+    '对比分析', '比较分析', '优缺点', '差异', '区别',
+    '最佳实践', '案例分析', '实际应用', '操作指导',
+    '体系建设', '管理体系', '制度体系', '组织架构',
+    '完整的', '系统的', '全面的', '综合的'
+  ];
+  
+  // 检查是否包含强制使用智谱AI的关键词
+  const hasZhipuKeywords = zhipuKeywords.some(keyword => questionLower.includes(keyword));
+  
+  console.log(`强制智谱AI关键词检查: ${hasZhipuKeywords}`);
+  
+  // 分析问题复杂度 - 更敏感的算法
   const complexity = analyzeQuestionComplexity(question);
   
   // 检查本地知识库匹配度
   const localMatches = findLocalMatches(question);
-  const hasGoodLocalMatch = localMatches.length > 0 && localMatches[0].score > 8;
+  const bestLocalScore = localMatches.length > 0 ? localMatches[0].score : 0;
   
-  console.log(`问题复杂度: ${complexity}, 本地匹配数: ${localMatches.length}, 最佳匹配分数: ${localMatches[0]?.score || 0}`);
+  console.log(`问题: "${question}"`);
+  console.log(`复杂度: ${complexity}, 本地最佳匹配: ${bestLocalScore}, 强制智谱: ${hasZhipuKeywords}`);
   
-  // 路由决策逻辑
+  // 路由决策逻辑 - 更倾向于使用智谱AI
   if (AI_MODE === 'local') {
+    console.log('强制本地模式');
     return 'local';
   } else if (AI_MODE === 'zhipu') {
+    console.log('强制智谱模式');
     return 'zhipu';
   } else { // hybrid模式
-    // 简单问题且有好的本地匹配 → 使用本地
-    if (complexity <= 3 && hasGoodLocalMatch) {
-      return 'local';
-    }
-    // 复杂问题或本地匹配不佳 → 使用智谱AI
-    else {
+    // 1. 包含强制关键词 → 必须使用智谱AI
+    if (hasZhipuKeywords) {
+      console.log('检测到复杂关键词，使用智谱AI');
       return 'zhipu';
     }
+    
+    // 2. 高复杂度问题 → 使用智谱AI
+    if (complexity >= 4) {
+      console.log('高复杂度问题，使用智谱AI');
+      return 'zhipu';
+    }
+    
+    // 3. 中等复杂度且本地匹配不佳 → 使用智谱AI
+    if (complexity >= 3 && bestLocalScore < 15) {
+      console.log('中等复杂度且本地匹配不佳，使用智谱AI');
+      return 'zhipu';
+    }
+    
+    // 4. 问题较长 → 使用智谱AI
+    if (question.length > 30) {
+      console.log('问题较长，使用智谱AI');
+      return 'zhipu';
+    }
+    
+    // 5. 其他情况 → 使用本地知识库
+    console.log('使用本地知识库');
+    return 'local';
+  }
+}
   }
 }
 
 // 分析问题复杂度 (1-5级)
+// 更敏感的问题复杂度分析 (1-5级)
 function analyzeQuestionComplexity(question) {
   let complexity = 1;
   
-  // 长度因子
-  if (question.length > 20) complexity += 1;
+  // 基础长度因子
+  if (question.length > 15) complexity += 1;
+  if (question.length > 30) complexity += 1;
   if (question.length > 50) complexity += 1;
   
-  // 关键词因子
-  const complexKeywords = ['如何实施', '具体步骤', '详细流程', '最佳实践', '案例分析', '对比分析'];
-  if (complexKeywords.some(keyword => question.includes(keyword))) {
-    complexity += 2;
-  }
+  // 高价值关键词 - 直接加高分
+  const highValueKeywords = [
+    '详细', '具体', '全面', '完整', '系统', '深入',
+    '分析', '建立', '实施', '构建', '制定',
+    '体系', '架构', '流程', '步骤', '方案',
+    '如何', '怎么', '怎样', '措施', '方法'
+  ];
+  
+  let keywordCount = 0;
+  highValueKeywords.forEach(keyword => {
+    if (question.includes(keyword)) {
+      keywordCount++;
+    }
+  });
+  
+  complexity += keywordCount; // 每个关键词+1分
+  
+  // 复杂句式识别
+  const complexPatterns = [
+    '如何建立', '如何实施', '如何构建', '如何制定',
+    '请详细', '具体分析', '深入分析', '全面分析',
+    '包括', '涉及', '步骤', '流程', '体系',
+    '对比', '比较', '区别', '差异', '优缺点'
+  ];
+  
+  complexPatterns.forEach(pattern => {
+    if (question.includes(pattern)) {
+      complexity += 2; // 复杂句式+2分
+    }
+  });
+  
+  // 多概念组合
+  const concepts = question.split(/[，、；和与及]/).length;
+  if (concepts > 2) complexity += 1;
+  if (concepts > 3) complexity += 1;
+  
+  // 问号数量（多个问题）
+  const questionMarks = (question.match(/[？?]/g) || []).length;
+  if (questionMarks > 1) complexity += 1;
+  
+  console.log(`复杂度计算: 长度因子+基础分, 关键词数量: ${keywordCount}, 最终复杂度: ${Math.min(complexity, 5)}`);
+  
+  return Math.min(complexity, 5);
+}
   
   // 多概念因子
   const conceptCount = question.split(/[，、；和与及]/).length;
@@ -167,24 +248,45 @@ function findLocalMatches(question) {
 }
 
 // 智谱AI调用
+// 智谱AI调用增强版 - 添加更多错误处理
 async function callZhipuAI(question) {
   if (!ZHIPU_API_KEY) {
+    console.error('智谱AI密钥未配置');
     throw new Error('智谱AI密钥未配置');
   }
   
-  const systemPrompt = `你是一位专业的安全生产专家，具有丰富的安全管理经验。请基于以下要求回答用户问题：
+  // 针对安全管理体系问题的专门提示词
+  const isManagementSystemQuestion = question.includes('管理体系') || 
+                                   question.includes('组织架构') || 
+                                   question.includes('制度建设');
+  
+  let systemPrompt = `你是一位资深的安全生产专家，具有20年以上的企业安全管理经验。请基于以下要求回答用户问题：
 
-1. 回答要准确、专业、实用
-2. 内容要结构化，使用合适的格式（如**粗体**、• 列表等）
-3. 涉及法规时要引用具体条文
-4. 提供具体的实施建议和操作指导
-5. 回答长度控制在500-800字
-6. 语言要通俗易懂，避免过于学术化
+1. 回答要准确、专业、实用，具有很强的可操作性
+2. 内容要结构化，合理使用**粗体**、• 列表、数字编号等格式
+3. 涉及法规时要引用具体条文和标准
+4. 提供具体的实施建议、操作指导和时间安排
+5. 回答长度控制在800-1200字，确保信息量充足
+6. 语言要专业但通俗易懂，适合企业管理者阅读
+7. 如涉及体系建设，要从组织、制度、流程、考核等多维度分析`;
 
-请专注于安全生产领域，如果问题不相关，请友好地引导用户询问安全生产相关问题。`;
+  if (isManagementSystemQuestion) {
+    systemPrompt += `
 
+特别注意：当前问题涉及安全管理体系建设，请重点关注：
+- 组织架构设计的层级和职责分工
+- 制度体系的完整性和系统性  
+- 实施步骤的先后顺序和关键节点
+- 各环节的质量控制和效果评估
+- 与相关法规标准的对应关系`;
+  }
+  
   try {
-    console.log('调用智谱AI...');
+    console.log('开始调用智谱AI...', { 
+      question: question.substring(0, 50) + '...',
+      isManagementSystem: isManagementSystemQuestion 
+    });
+    
     const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
       method: 'POST',
       headers: {
@@ -197,28 +299,46 @@ async function callZhipuAI(question) {
           { role: "system", content: systemPrompt },
           { role: "user", content: question }
         ],
-        temperature: 0.3,
-        max_tokens: 1000
+        temperature: 0.2, // 降低随机性，提高专业性
+        max_tokens: 1500,  // 增加token限制
+        top_p: 0.8
       })
     });
     
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('智谱AI调用失败:', response.status, errorData);
-      throw new Error(`智谱AI调用失败: ${response.status}`);
+      console.error('智谱AI HTTP错误:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData
+      });
+      throw new Error(`智谱AI调用失败: HTTP ${response.status}`);
     }
     
     const data = await response.json();
-    console.log('智谱AI调用成功, tokens使用:', data.usage);
+    
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error('智谱AI返回数据格式错误:', data);
+      throw new Error('智谱AI返回数据格式错误');
+    }
+    
+    console.log('智谱AI调用成功:', {
+      tokensUsed: data.usage?.total_tokens || 0,
+      answerLength: data.choices[0].message.content.length
+    });
     
     return {
       answer: data.choices[0].message.content,
-      tokensUsed: data.usage.total_tokens,
+      tokensUsed: data.usage?.total_tokens || 0,
       model: 'glm-4'
     };
     
   } catch (error) {
-    console.error('智谱AI调用错误:', error);
+    console.error('智谱AI调用完整错误信息:', {
+      message: error.message,
+      stack: error.stack,
+      apiKey: ZHIPU_API_KEY ? 'configured' : 'missing'
+    });
     throw error;
   }
 }
