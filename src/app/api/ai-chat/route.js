@@ -1,4 +1,4 @@
-// src/app/api/ai-chat/route.js - 智谱AI集成版本
+// src/app/api/ai-chat/route.js - 智谱AI集成版本（语法修复）
 import { NextResponse } from 'next/server';
 
 // 配置
@@ -82,7 +82,6 @@ const safetyKnowledge = [
   }
 ];
 
-// 智能路由：决定使用本地知识库还是智谱AI
 // 更精准的智能路由：决定使用本地知识库还是智谱AI
 function getResponseStrategy(question) {
   const questionLower = question.toLowerCase();
@@ -149,10 +148,7 @@ function getResponseStrategy(question) {
     return 'local';
   }
 }
-  }
-}
 
-// 分析问题复杂度 (1-5级)
 // 更敏感的问题复杂度分析 (1-5级)
 function analyzeQuestionComplexity(question) {
   let complexity = 1;
@@ -206,17 +202,6 @@ function analyzeQuestionComplexity(question) {
   
   return Math.min(complexity, 5);
 }
-  
-  // 多概念因子
-  const conceptCount = question.split(/[，、；和与及]/).length;
-  if (conceptCount > 2) complexity += 1;
-  
-  // 问题类型因子
-  if (question.includes('为什么') || question.includes('原因')) complexity += 1;
-  if (question.includes('对比') || question.includes('区别')) complexity += 2;
-  
-  return Math.min(complexity, 5);
-}
 
 // 本地知识库匹配
 function findLocalMatches(question) {
@@ -247,7 +232,6 @@ function findLocalMatches(question) {
   return allMatches.sort((a, b) => b.score - a.score);
 }
 
-// 智谱AI调用
 // 智谱AI调用增强版 - 添加更多错误处理
 async function callZhipuAI(question) {
   if (!ZHIPU_API_KEY) {
