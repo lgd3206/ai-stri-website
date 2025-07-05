@@ -1,311 +1,275 @@
-// 安全生产AI助手 - 三层模型架构
+// 基于智谱AI的用户分级系统 - route.js
 // src/app/api/ai-chat/route.js
 
 import { NextResponse } from 'next/server';
 
-// 配置 - 多AI模型支持
-const AI_CONFIG = {
-  zhipu: {
-    apiKey: process.env.ZHIPU_API_KEY,
-    baseURL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-    model: 'glm-4',
-    costPer1kTokens: 0.005, // 约0.5分/1k tokens
-    maxTokens: 8000,
-    suitable: ['general', 'technical', 'management']
+// 智谱AI配置
+const ZHIPU_CONFIG = {
+  apiKey: process.env.ZHIPU_API_KEY,
+  baseURL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+  model: 'glm-4',
+  maxTokens: 8000,
+  temperature: 0.3
+};
+
+// 用户分级配置
+const USER_TIERS = {
+  free: {
+    name: '免费用户',
+    dailyLimit: 5,           // 每日5次免费问答
+    monthlyLimit: 50,        // 每月50次
+    maxTokens: 1000,         // 单次回答限制1000 tokens
+    features: ['基础安全咨询', '技术参数查询'],
+    price: 0
   },
-  openai: {
-    apiKey: process.env.OPENAI_API_KEY,
-    baseURL: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-4',
-    costPer1kTokens: 0.03, // 约3分/1k tokens
-    maxTokens: 8000,
-    suitable: ['complex', 'analysis', 'creative']
+  basic: {
+    name: '基础版',
+    dailyLimit: 20,          // 每日20次问答
+    monthlyLimit: 300,       // 每月300次
+    maxTokens: 2000,         // 单次回答限制2000 tokens
+    features: ['深度安全分析', '专业建议', '优先响应'],
+    price: 19.9             // 19.9元/月
   },
-  claude: {
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    baseURL: 'https://api.anthropic.com/v1/messages',
-    model: 'claude-3-sonnet-20240229',
-    costPer1kTokens: 0.015, // 约1.5分/1k tokens  
-    maxTokens: 8000,
-    suitable: ['analysis', 'reasoning', 'professional']
+  pro: {
+    name: '专业版', 
+    dailyLimit: 100,         // 每日100次问答
+    monthlyLimit: 1500,      // 每月1500次
+    maxTokens: 4000,         // 单次回答限制4000 tokens
+    features: ['无限安全咨询', '复杂问题分析', '专家级回答', 'API接口'],
+    price: 99              // 99元/月
+  },
+  enterprise: {
+    name: '企业版',
+    dailyLimit: -1,          // 无限制
+    monthlyLimit: -1,        // 无限制
+    maxTokens: 8000,         // 最大tokens
+    features: ['企业定制', '专属客服', '批量处理', '数据导出'],
+    price: 499             // 499元/月
   }
 };
 
-// 智能模型选择策略
-function selectOptimalModel(question, userLevel = 'free') {
-  const analysis = analyzeQuestion(question);
-  
-  // 用户级别限制
-  const userLimits = {
-    free: ['zhipu'], // 免费用户只能用智谱AI
-    premium: ['zhipu', 'claude'], // 付费用户可用智谱AI和Claude
-    enterprise: ['zhipu', 'claude', 'openai'] // 企业用户可用所有模型
+// 内存存储用户使用记录（生产环境建议使用Redis或数据库）
+const userUsageStore = new Map();
+const userAuthStore = new Map();
+
+// 生成简单的用户标识
+function generateUserToken(userId, tier = 'free', expireTime = null) {
+  const userData = {
+    userId,
+    tier,
+    expireTime: expireTime || (Date.now() + 30 * 24 * 60 * 60 * 1000), // 30天后过期
+    createdAt: Date.now()
   };
   
-  const availableModels = userLimits[userLevel] || ['zhipu'];
+  // 简化的token：base64编码的用户数据
+  const token = btoa(JSON.stringify(userData));
+  userAuthStore.set(token, userData);
   
-  // 策略1：超高复杂度 → 顶级模型
-  if (analysis.complexity >= 9 && availableModels.includes('openai')) {
-    return {
-      model: 'openai',
-      reason: '超高复杂度问题，使用GPT-4获得最佳效果',
-      estimatedCost: analysis.estimatedTokens * AI_CONFIG.openai.costPer1kTokens / 1000
+  return token;
+}
+
+// 验证用户token和获取用户信息
+function validateUserToken(token) {
+  if (!token) return { userId: 'anonymous', tier: 'free' };
+  
+  try {
+    const userData = userAuthStore.get(token);
+    if (!userData) {
+      // 尝试解析token
+      const decoded = JSON.parse(atob(token));
+      if (decoded.expireTime && decoded.expireTime > Date.now()) {
+        return decoded;
+      }
+      return { userId: 'anonymous', tier: 'free' };
+    }
+    
+    // 检查是否过期
+    if (userData.expireTime && userData.expireTime < Date.now()) {
+      userAuthStore.delete(token);
+      return { userId: 'anonymous', tier: 'free' };
+    }
+    
+    return userData;
+  } catch (error) {
+    console.error('Token验证失败:', error);
+    return { userId: 'anonymous', tier: 'free' };
+  }
+}
+
+// 获取用户今日使用次数
+function getUserTodayUsage(userId) {
+  const today = new Date().toDateString();
+  const usageKey = `${userId}-${today}`;
+  return userUsageStore.get(usageKey) || 0;
+}
+
+// 获取用户本月使用次数
+function getUserMonthlyUsage(userId) {
+  const thisMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const usageKey = `${userId}-${thisMonth}`;
+  return userUsageStore.get(usageKey) || 0;
+}
+
+// 增加用户使用次数
+function incrementUserUsage(userId) {
+  const today = new Date().toDateString();
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  
+  const dailyKey = `${userId}-${today}`;
+  const monthlyKey = `${userId}-${thisMonth}`;
+  
+  userUsageStore.set(dailyKey, (userUsageStore.get(dailyKey) || 0) + 1);
+  userUsageStore.set(monthlyKey, (userUsageStore.get(monthlyKey) || 0) + 1);
+}
+
+// 检查用户是否超出使用限制
+function checkUsageLimit(userId, userTier) {
+  const tierConfig = USER_TIERS[userTier];
+  if (!tierConfig) return false;
+  
+  const todayUsage = getUserTodayUsage(userId);
+  const monthlyUsage = getUserMonthlyUsage(userId);
+  
+  // 检查日限制
+  if (tierConfig.dailyLimit !== -1 && todayUsage >= tierConfig.dailyLimit) {
+    return { 
+      allowed: false, 
+      reason: 'daily_limit',
+      message: `您今日的${tierConfig.dailyLimit}次免费问答已用完`,
+      suggestion: '升级到付费版本获得更多问答次数'
     };
   }
   
-  // 策略2：高复杂度分析问题 → Claude  
-  if (analysis.complexity >= 7 && 
-      (analysis.needsReasoning || analysis.needsAnalysis) && 
-      availableModels.includes('claude')) {
-    return {
-      model: 'claude',
-      reason: '复杂分析问题，Claude推理能力更强',
-      estimatedCost: analysis.estimatedTokens * AI_CONFIG.claude.costPer1kTokens / 1000
+  // 检查月限制
+  if (tierConfig.monthlyLimit !== -1 && monthlyUsage >= tierConfig.monthlyLimit) {
+    return { 
+      allowed: false, 
+      reason: 'monthly_limit',
+      message: `您本月的${tierConfig.monthlyLimit}次问答已用完`,
+      suggestion: '升级到更高版本获得更多问答次数'
     };
   }
   
-  // 策略3：默认使用智谱AI（性价比最高）
-  return {
-    model: 'zhipu',
-    reason: '智谱AI处理中文安全生产问题效果最佳',
-    estimatedCost: analysis.estimatedTokens * AI_CONFIG.zhipu.costPer1kTokens / 1000
+  return { 
+    allowed: true,
+    remaining: {
+      daily: tierConfig.dailyLimit === -1 ? '无限制' : tierConfig.dailyLimit - todayUsage,
+      monthly: tierConfig.monthlyLimit === -1 ? '无限制' : tierConfig.monthlyLimit - monthlyUsage
+    }
   };
 }
 
-// 问题复杂度和类型分析
-function analyzeQuestion(question) {
-  const questionLower = question.toLowerCase();
-  let complexity = 1;
-  let estimatedTokens = 200; // 基础token估算
+// 安全生产专业提示词
+function generateSafetyPrompt(question, userTier) {
+  const tierConfig = USER_TIERS[userTier];
+  const maxTokens = tierConfig.maxTokens;
   
-  // 复杂度评分因子
-  const complexityFactors = {
-    // 长度因子
-    length: question.length > 50 ? 2 : (question.length > 20 ? 1 : 0),
-    
-    // 关键词复杂度
-    highComplexity: [
-      '详细分析', '深入分析', '系统性分析', '全面评估',
-      '对比分析', '可行性研究', '风险评估报告',
-      '管理体系设计', '实施方案制定', '应急预案编制',
-      '安全评价', '职业病危害评价', '消防设计'
-    ].some(keyword => questionLower.includes(keyword)) ? 4 : 0,
-    
-    mediumComplexity: [
-      '如何建立', '如何实施', '怎么做', '具体步骤',
-      '注意事项', '技术要求', '操作规程',
-      '检查清单', '培训计划', '整改措施'
-    ].some(keyword => questionLower.includes(keyword)) ? 2 : 0,
-    
-    technicalTerms: [
-      '临界量', '爆炸极限', '防爆等级', '耐火等级',
-      '毒性参数', '理化性质', '安全距离',
-      'hazop', 'lopa', 'qra', 'pha'
-    ].some(keyword => questionLower.includes(keyword)) ? 2 : 0,
-    
-    // 多主题复合
-    multiTopic: (questionLower.match(/[，。；,;]/g) || []).length > 2 ? 2 : 0,
-    
-    // 需要推理分析
-    needsReasoning: [
-      '为什么', '原因', '影响因素', '依据',
-      '优缺点', '比较', '选择', '建议'
-    ].some(keyword => questionLower.includes(keyword)) ? 2 : 0
-  };
-  
-  // 计算总复杂度
-  complexity = Object.values(complexityFactors).reduce((sum, factor) => sum + factor, 1);
-  complexity = Math.min(complexity, 10); // 限制最大值
-  
-  // Token估算
-  estimatedTokens = Math.max(200, question.length * 3 + complexity * 100);
-  
-  return {
-    complexity,
-    estimatedTokens,
-    needsReasoning: complexityFactors.needsReasoning > 0,
-    needsAnalysis: complexityFactors.highComplexity > 0,
-    isTechnical: complexityFactors.technicalTerms > 0,
-    factors: complexityFactors
-  };
-}
+  let promptSuffix = '';
+  if (userTier === 'free') {
+    promptSuffix = `\n\n回答要求：由于是免费版本，请控制回答长度在${maxTokens}字符以内，重点突出关键信息。`;
+  } else if (userTier === 'pro' || userTier === 'enterprise') {
+    promptSuffix = `\n\n回答要求：作为专业版用户，请提供详细、深入的专业分析，包含具体的实施建议和注意事项。`;
+  }
 
-// 安全生产专业提示词生成
-function generateSafetyPrompt(question, modelType) {
-  const basePrompt = `你是一位资深的安全生产专家，具有20年的安全管理和技术经验。请基于中国安全生产法律法规和国际先进标准，为用户提供专业、准确、实用的安全生产指导。
+  return `你是一位资深的安全生产专家，具有20年的安全管理和技术经验。请基于中国安全生产法律法规和国际先进标准，为用户提供专业、准确、实用的安全生产指导。
 
 核心原则：
 1. 答案必须准确、专业，基于现行有效的法规标准
-2. 技术参数必须引用具体的国家标准或行业规范
+2. 技术参数必须引用具体的国家标准或行业规范  
 3. 提供具体可操作的建议和措施
 4. 如涉及生命安全，请特别强调风险和注意事项
 
-请回答以下问题：${question}
-
-回答要求：
-- 结构清晰，要点明确
-- 如涉及技术参数，请注明标准依据
-- 如涉及法规要求，请注明法规名称和条款
-- 提供实用的实施建议`;
-
-  // 不同模型的特殊指令
-  const modelSpecificInstructions = {
-    zhipu: '\n\n特别提醒：请重点关注中国的法规标准和实践经验，回答长度控制在500-800字。',
-    claude: '\n\n特别要求：请进行深入的逻辑分析，考虑各种情况和影响因素，提供系统性的解决方案。',
-    openai: '\n\n高级要求：请提供创新性的解决思路，结合国际最佳实践，给出前瞻性的专业建议。'
-  };
-
-  return basePrompt + (modelSpecificInstructions[modelType] || '');
+用户问题：${question}${promptSuffix}`;
 }
 
-// 通用AI调用函数
-async function callAIModel(modelName, question, userLevel = 'free') {
-  const config = AI_CONFIG[modelName];
-  if (!config || !config.apiKey) {
-    throw new Error(`${modelName} API未配置`);
+// 调用智谱AI
+async function callZhipuAI(question, userTier) {
+  if (!ZHIPU_CONFIG.apiKey) {
+    throw new Error('智谱AI API密钥未配置');
   }
 
-  const prompt = generateSafetyPrompt(question, modelName);
-  
+  const tierConfig = USER_TIERS[userTier];
+  const prompt = generateSafetyPrompt(question, userTier);
+
   try {
-    let requestBody, headers;
-    
-    if (modelName === 'claude') {
-      // Claude API格式
-      headers = {
+    console.log(`智谱AI调用 - 用户等级: ${userTier}, 问题: ${question.substring(0, 50)}...`);
+
+    const response = await fetch(ZHIPU_CONFIG.baseURL, {
+      method: 'POST',
+      headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': config.apiKey,
-        'anthropic-version': '2023-06-01'
-      };
-      
-      requestBody = {
-        model: config.model,
-        max_tokens: config.maxTokens,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ]
-      };
-    } else {
-      // OpenAI/智谱AI格式
-      headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`
-      };
-      
-      requestBody = {
-        model: config.model,
+        'Authorization': `Bearer ${ZHIPU_CONFIG.apiKey}`
+      },
+      body: JSON.stringify({
+        model: ZHIPU_CONFIG.model,
         messages: [
           {
             role: 'user',
             content: prompt
           }
         ],
-        max_tokens: config.maxTokens,
-        temperature: 0.3
-      };
-    }
-
-    console.log(`调用${modelName}模型处理问题:`, question.substring(0, 50) + '...');
-    
-    const response = await fetch(config.baseURL, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody)
+        max_tokens: tierConfig.maxTokens,
+        temperature: ZHIPU_CONFIG.temperature
+      })
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`${modelName} API调用失败: ${response.status} - ${errorText}`);
+      throw new Error(`智谱AI API调用失败: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    
-    let content, tokensUsed;
-    
-    if (modelName === 'claude') {
-      content = data.content[0].text;
-      tokensUsed = data.usage.input_tokens + data.usage.output_tokens;
-    } else {
-      content = data.choices[0].message.content;
-      tokensUsed = data.usage?.total_tokens || 0;
-    }
+    const content = data.choices[0].message.content;
+    const tokensUsed = data.usage?.total_tokens || 0;
 
-    const actualCost = tokensUsed * config.costPer1kTokens / 1000;
-    
-    console.log(`${modelName}调用成功:`, {
-      tokensUsed,
-      cost: actualCost.toFixed(4),
-      answerLength: content.length
-    });
+    console.log(`智谱AI调用成功: tokens=${tokensUsed}, 长度=${content.length}`);
+
+    // 根据用户等级添加不同的后缀
+    let suffix = '\n\n*（智谱AI专业回答）*';
+    if (userTier === 'free') {
+      suffix = '\n\n*（智谱AI基础版回答，升级获得更详细解答）*';
+    } else if (userTier === 'pro' || userTier === 'enterprise') {
+      suffix = '\n\n*（智谱AI专业版深度分析）*';
+    }
 
     return {
       success: true,
-      answer: content + `\n\n*（${getModelDisplayName(modelName)}专业回答）*`,
+      answer: content + suffix,
       tokensUsed,
-      cost: actualCost,
-      model: modelName
+      model: 'zhipu-glm4'
     };
 
   } catch (error) {
-    console.error(`${modelName}调用失败:`, error);
+    console.error('智谱AI调用失败:', error);
     throw error;
-  }
-}
-
-// 模型显示名称
-function getModelDisplayName(modelName) {
-  const displayNames = {
-    zhipu: '智谱AI',
-    openai: 'GPT-4',
-    claude: 'Claude'
-  };
-  return displayNames[modelName] || modelName;
-}
-
-// 缓存机制
-const responseCache = new Map();
-const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24小时
-
-function getCachedResponse(question) {
-  const cacheKey = question.toLowerCase().trim();
-  const cached = responseCache.get(cacheKey);
-  
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    console.log('使用缓存回答');
-    return cached.response;
-  }
-  
-  return null;
-}
-
-function setCachedResponse(question, response) {
-  const cacheKey = question.toLowerCase().trim();
-  responseCache.set(cacheKey, {
-    response,
-    timestamp: Date.now()
-  });
-  
-  // 清理过期缓存
-  if (responseCache.size > 1000) {
-    const entries = Array.from(responseCache.entries());
-    entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
-    
-    // 删除最旧的20%
-    const deleteCount = Math.floor(entries.length * 0.2);
-    for (let i = 0; i < deleteCount; i++) {
-      responseCache.delete(entries[i][0]);
-    }
   }
 }
 
 // 主要API处理函数
 export async function POST(request) {
   try {
-    const { question, userLevel = 'free' } = await request.json();
-    
+    const { question, userToken, action } = await request.json();
+
+    // 处理用户注册/登录
+    if (action === 'register' || action === 'login') {
+      const userId = request.body?.userId || `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const tier = request.body?.tier || 'free';
+      
+      const token = generateUserToken(userId, tier);
+      
+      return NextResponse.json({
+        success: true,
+        action: action,
+        userToken: token,
+        userInfo: {
+          userId,
+          tier,
+          tierConfig: USER_TIERS[tier]
+        }
+      });
+    }
+
+    // 处理问答请求
     if (!question || question.trim().length === 0) {
       return NextResponse.json({
         success: false,
@@ -313,40 +277,48 @@ export async function POST(request) {
       }, { status: 400 });
     }
 
-    console.log('收到问题:', question);
-    console.log('用户级别:', userLevel);
+    // 验证用户身份
+    const userInfo = validateUserToken(userToken);
+    const { userId, tier: userTier } = userInfo;
 
-    // 检查缓存
-    const cachedResponse = getCachedResponse(question);
-    if (cachedResponse) {
+    console.log(`收到问答请求 - 用户: ${userId}, 等级: ${userTier}, 问题: ${question}`);
+
+    // 检查使用限制
+    const usageCheck = checkUsageLimit(userId, userTier);
+    if (!usageCheck.allowed) {
       return NextResponse.json({
-        ...cachedResponse,
-        cached: true
-      });
+        success: false,
+        error: usageCheck.message,
+        suggestion: usageCheck.suggestion,
+        reason: usageCheck.reason,
+        upgradeInfo: {
+          available: true,
+          tiers: USER_TIERS
+        }
+      }, { status: 429 });
     }
 
-    // 选择最优模型
-    const modelSelection = selectOptimalModel(question, userLevel);
-    console.log('选择模型:', modelSelection);
-
-    // 调用AI模型
-    const aiResponse = await callAIModel(modelSelection.model, question, userLevel);
+    // 调用智谱AI
+    const aiResponse = await callZhipuAI(question, userTier);
     
+    // 增加用户使用次数
+    incrementUserUsage(userId);
+
     // 构建响应
     const response = {
       success: true,
       answer: aiResponse.answer,
-      model: getModelDisplayName(aiResponse.model),
-      modelSelection: modelSelection.reason,
-      tokensUsed: aiResponse.tokensUsed,
-      cost: aiResponse.cost,
-      timestamp: new Date().toISOString(),
-      strategy: 'real_ai',
-      cached: false
+      userInfo: {
+        tier: userTier,
+        tierName: USER_TIERS[userTier].name,
+        remaining: usageCheck.remaining
+      },
+      apiInfo: {
+        model: aiResponse.model,
+        tokensUsed: aiResponse.tokensUsed,
+        timestamp: new Date().toISOString()
+      }
     };
-
-    // 缓存响应
-    setCachedResponse(question, response);
 
     return NextResponse.json(response);
 
@@ -356,29 +328,55 @@ export async function POST(request) {
     return NextResponse.json({
       success: false,
       error: '抱歉，AI助手暂时无法回答，请稍后再试',
-      details: error.message
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     }, { status: 500 });
   }
 }
 
-// GET请求 - 返回配置信息
-export async function GET() {
-  const configuredModels = Object.keys(AI_CONFIG).filter(
-    model => AI_CONFIG[model].apiKey
-  );
+// GET请求 - 返回用户信息和配置
+export async function GET(request) {
+  const url = new URL(request.url);
+  const userToken = url.searchParams.get('token');
+  const action = url.searchParams.get('action');
 
+  // 获取用户信息
+  if (action === 'user-info') {
+    const userInfo = validateUserToken(userToken);
+    const usageCheck = checkUsageLimit(userInfo.userId, userInfo.tier);
+    
+    return NextResponse.json({
+      userInfo: {
+        ...userInfo,
+        tierConfig: USER_TIERS[userInfo.tier],
+        usage: {
+          today: getUserTodayUsage(userInfo.userId),
+          thisMonth: getUserMonthlyUsage(userInfo.userId),
+          remaining: usageCheck.remaining
+        }
+      }
+    });
+  }
+
+  // 返回系统配置信息
   return NextResponse.json({
-    message: '安全生产AI助手 - 三层模型架构',
-    version: '3.0',
-    configuredModels,
-    supportedUserLevels: ['free', 'premium', 'enterprise'],
-    cacheEnabled: true,
+    message: '安全生产AI助手 - 智谱AI驱动',
+    version: '2.0',
+    aiModel: 'zhipu-glm4',
+    userTiers: Object.entries(USER_TIERS).map(([key, config]) => ({
+      id: key,
+      name: config.name,
+      price: config.price,
+      features: config.features,
+      limits: {
+        daily: config.dailyLimit,
+        monthly: config.monthlyLimit
+      }
+    })),
     features: [
-      '智能模型选择',
-      '成本优化控制', 
-      '专业安全提示词',
-      '多级用户支持',
-      '智能缓存机制'
+      '智谱AI专业回答',
+      '用户分级管理',
+      '使用量统计',
+      '成本优化控制'
     ]
   });
 }
