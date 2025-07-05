@@ -67,6 +67,7 @@ export default function RootLayout({
             <p className="mt-2">关注我们的微信公众号：安全技术研究院</p>
           </div>
         </footer>
+        <FloatingAIButton />
       </body>
     </html>
   )
